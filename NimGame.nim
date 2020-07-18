@@ -36,8 +36,6 @@ type
 proc paint*(b: Box; window: RenderWindow; dt: float) =
   let acc = vec2((b.velocity.x)*dt,(b.velocity.y)*dt)
 
-  echo abs(b.velocity.y)
-
   b.lastPos.x = b.pos.x
   b.lastPos.y = b.pos.y
 
