@@ -2,10 +2,22 @@ import csfml
 
 # Render init
 var window = new_RenderWindow(
-    video_mode(1000, 1000), "Boxes",
-    WindowStyle.Default, context_settings(32, antialiasing=8)
+    video_mode(1400, 1000), "Boxes",
+    WindowStyle.Titlebar|WindowStyle.Close, context_settings(32, antialiasing=8)
 )
 #window.framerate_limit = 120
+
+# Help vars/objs
+var 
+  clock = newClock()
+  lastMousePos = vec2(0.0,0.0)
+  wallTexture = new_Texture("resources/wall.jpg")
+
+# Constants
+const
+  THROW_MULTIPLIER = 0.1
+  COLLISION_TOLERANCE = 1
+
 
 # Types
 type
@@ -17,19 +29,37 @@ type
     scale: float
     dragged: bool
     draggedPoint: Vector2f
+    bounce: float
+    grounded: bool
+    lastPos: Vector2f
 
 proc paint*(b: Box; window: RenderWindow; dt: float) =
-  let acc = vec2((b.velocity.x/2)*dt,(b.velocity.y/2)*dt)
-  
+  let acc = vec2((b.velocity.x)*dt,(b.velocity.y)*dt)
+
+  echo abs(b.velocity.y)
+
+  b.lastPos.x = b.pos.x
+  b.lastPos.y = b.pos.y
+
   b.pos.x -= acc.x
   b.pos.y -= acc.y
   b.velocity.x -= acc.x
   b.velocity.y -= acc.y
 
+  if(abs(b.lastPos.x - b.pos.x) < 0.01 and abs(b.lastPos.y - b.pos.y) < 0.01 and abs((b.pos.y + b.size.y.float) - window.size.y.float) <= 2):
+    b.grounded = true
+  else:
+    b.grounded = false
+
+  #if(abs(b.lastPos.x - b.pos.x) != 0 or abs(b.lastPos.y - b.pos.y) != 0):
+  #  echo abs(b.lastPos.x - b.pos.x), " ", abs(b.lastPos.y - b.pos.y)
+
   let myRect = new_Sprite(b.texture)
   myRect.position = b.pos
   myRect.scale = vec2(b.scale,b.scale)
   window.draw myRect
+
+  myRect.destroy()
 
 proc collision*(b: Box; pos: Vector2f): bool =
   if(pos.x < b.pos.x + b.size.x.float and 
@@ -47,21 +77,13 @@ proc newBox*(pos: Vector2i, scale: float = 1.0): Box =
   result.scale = scale
   result.dragged = false
   result.draggedPoint = vec2(0.0,0.0)
+  result.bounce = 0.3
+  result.grounded = false
+  result.lastPos = vec2(0,0)
 
 
 # Objects
-var myBox = newBox(vec2(100,100), 0.5)
-
-# Help vars/objs
-var 
-  clock = newClock()
-  lastMousePos = vec2(0.0,0.0)
-  wallTexture = new_Texture("resources/wall.jpg")
-
-# Constants
-const
-  DRAG = 0.8
-  THROW_MULTIPLIER = 0.1
+var boxes = @[newBox(vec2(100,300), 0.5),newBox(vec2(600,300), 0.5),newBox(vec2(1000,300), 0.5)]
 
 # Loop
 while window.open:
@@ -76,58 +98,106 @@ while window.open:
 
     # MouseButton press -> Start dragging  
     elif event.kind == EventType.MouseButtonPressed:
-      if(myBox.collision(vec2(event.mouseButton.x,event.mouseButton.y))):
-        myBox.dragged = true
-        myBox.velocity = vec2(0,0)
-        myBox.draggedPoint = vec2(event.mouseButton.x.float - myBox.pos.x, event.mouseButton.y.float - myBox.pos.y)
+      for box in boxes.items:
+        if(box.collision(vec2(event.mouseButton.x,event.mouseButton.y))):
+          box.dragged = true
+          box.velocity = vec2(0,0)
+          box.draggedPoint = vec2(event.mouseButton.x.float - box.pos.x, event.mouseButton.y.float - box.pos.y)
 
-        lastMousePos = vec2(event.mouseButton.x, event.mouseButton.y)
+          lastMousePos = vec2(event.mouseButton.x, event.mouseButton.y)
 
     # MouseButton released -> Stop dragging
     elif event.kind == EventType.MouseButtonReleased:
-      if(myBox.dragged):
-        myBox.dragged = false
-  
-        let distance = vec2(lastMousePos.x-event.mouseButton.x.float,
-          lastMousePos.y-event.mouseButton.y.float)
-        
-        myBox.velocity.x = (distance.x / deltaTime) * THROW_MULTIPLIER
-        myBox.velocity.y = (distance.y / deltaTime) * THROW_MULTIPLIER
+      for box in boxes.items:
+        if(box.dragged):
+          box.dragged = false
+    
+          let distance = vec2(lastMousePos.x-event.mouseButton.x.float,
+            lastMousePos.y-event.mouseButton.y.float)
+          
+          box.velocity.x = (distance.x / deltaTime) * THROW_MULTIPLIER
+          box.velocity.y = (distance.y / deltaTime) * THROW_MULTIPLIER
 
     # MouseMove -> Recalculate dragging coords
     elif event.kind == EventType.MouseMoved:
-      if(myBox.dragged):
-        lastMousePos = vec2(myBox.pos.x + myBox.draggedPoint.x, myBox.pos.y + myBox.draggedPoint.y)
-        myBox.pos = vec2(event.mouseMove.x.float - myBox.draggedPoint.x, event.mouseMove.y.float - myBox.draggedPoint.y)
-
-  # Gravity
-  if(not myBox.dragged):
-    myBox.velocity.y += -2
-
-  # Screen borders
-  if((myBox.pos.x+myBox.size.x.float) >  window.size.x.float):
-    myBox.pos.x =  (window.size.x-myBox.size.x).float
-    myBox.velocity.x = -(myBox.velocity.x*DRAG)
-
-  if((myBox.pos.y+myBox.size.y.float) >  window.size.y.float):
-    myBox.pos.y =  (window.size.y-myBox.size.y).float
-    myBox.velocity.y = -(myBox.velocity.y*DRAG)
-    myBox.velocity.x = myBox.velocity.x*DRAG
-
-  if(myBox.pos.x < 0):
-    myBox.pos.x = 0
-    myBox.velocity.x = -(myBox.velocity.x*DRAG)
-
-  if(myBox.pos.y < 0):
-    myBox.pos.y = 0
-    myBox.velocity.y = -(myBox.velocity.y*DRAG)
-
-  # Paint objects
-  #window.clear color(112, 197, 206)
+      for box in boxes.items:
+        if(box.dragged):
+          lastMousePos = vec2(box.pos.x + box.draggedPoint.x, box.pos.y + box.draggedPoint.y)
+          box.pos = vec2(event.mouseMove.x.float - box.draggedPoint.x, event.mouseMove.y.float - box.draggedPoint.y)
+  
+  # Paint background
   let wall = new_Sprite(wallTexture)
+  wall.scale = vec2(0.7,0.7)
   window.draw wall
+  wall.destroy()
 
-  myBox.paint(window, deltaTime)
+  for box in boxes.items:
+    # Gravity
+    if(not (box.dragged or box.grounded)):
+      box.velocity.y += -2
+
+    # Screen borders
+    if((box.pos.x+box.size.x.float) >  window.size.x.float):
+      box.pos.x =  (window.size.x-box.size.x).float
+      box.velocity.x = -(box.velocity.x*box.bounce)
+    if((box.pos.y+box.size.y.float) >  window.size.y.float):
+      box.pos.y =  (window.size.y-box.size.y).float
+      box.velocity.y = -(box.velocity.y*box.bounce)
+      box.velocity.x = box.velocity.x*box.bounce
+    if(box.pos.x < 0):
+      box.pos.x = 0
+      box.velocity.x = -(box.velocity.x*box.bounce)
+    if(box.pos.y < 0):
+      box.pos.y = 0
+      box.velocity.y = -(box.velocity.y*box.bounce)
+    
+    # Box collisions
+    for box2 in boxes.items:
+      if(box == box2): continue
+      if(box.pos.x < box2.pos.x + box2.size.x.float and box.pos.x > box2.pos.x - box2.size.x.float and
+         box.pos.y < box2.pos.y + box2.size.y.float and box.pos.y > box2.pos.y - box2.size.y.float):
+        
+        # Measure from which side collision happend
+        var deltaY = 0.0
+        if(abs(box.pos.y-box2.pos.y) > box.size.y.float-abs(box.pos.y-box2.pos.y)):
+          deltaY = box.size.y.float-abs(box.pos.y-box2.pos.y)
+        else:
+          deltaY = abs(box.pos.y-box2.pos.y)
+
+        var deltaX = 0.0
+        if(abs(box.pos.x-box2.pos.x) > box.size.x.float-abs(box.pos.x-box2.pos.x)):
+          deltaX = box.size.x.float-abs(box.pos.x-box2.pos.x)
+        else:
+          deltaX = abs(box.pos.x-box2.pos.x)
+
+        # Apply collisions tolerence
+        if(deltaX < deltaY):
+          if(box.pos.x > box2.pos.x):
+            box.pos.x += COLLISION_TOLERANCE
+            box2.pos.x -= COLLISION_TOLERANCE
+          else:
+            box.pos.x -= COLLISION_TOLERANCE
+            box2.pos.x += COLLISION_TOLERANCE
+        else:
+          if(box.pos.y > box2.pos.y):
+            box.pos.y += COLLISION_TOLERANCE
+            box2.pos.y -= COLLISION_TOLERANCE
+          else:
+            box.pos.y -= COLLISION_TOLERANCE
+            box2.pos.y += COLLISION_TOLERANCE
+
+        # Calculate collision forces
+        let pomVel1 = box.velocity.x
+        let pomVel2 = box2.velocity.x
+        box.velocity.x = (1-box.bounce)*pomVel2 - box.bounce*pomVel1
+        box2.velocity.x = (1-box.bounce)*pomVel1 - box.bounce*pomVel2
+
+        let pomyVel1 = box.velocity.y
+        let pomyVel2 = box2.velocity.y
+        box.velocity.y = (1-box.bounce)*pomyVel2 - box.bounce*pomyVel1
+        box2.velocity.y = (1-box.bounce)*pomyVel1 - box.bounce*pomyVel2
+
+    box.paint(window, deltaTime)
 
   window.display()
 
