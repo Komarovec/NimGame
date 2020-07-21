@@ -5,7 +5,7 @@ var window = new_RenderWindow(
     video_mode(1400, 1000), "Boxes",
     WindowStyle.Titlebar|WindowStyle.Close, context_settings(32, antialiasing=8)
 )
-#window.framerate_limit = 120
+window.framerate_limit = 200
 
 # Help vars/objs
 var 
@@ -15,9 +15,11 @@ var
 
 # Constants
 const
-  THROW_MULTIPLIER = 0.1
+  THROW_MULTIPLIER = 0.3
   COLLISION_TOLERANCE = 1
-
+  VEL_MULTIPLIER = 3
+  RATION_DRAG_BORDER = 100
+  GRAVITY_FORCE = -5
 
 # Types
 type
@@ -34,15 +36,14 @@ type
     lastPos: Vector2f
 
 proc paint*(b: Box; window: RenderWindow; dt: float) =
-  let acc = vec2((b.velocity.x)*dt,(b.velocity.y)*dt)
-
+  let acc = vec2((b.velocity.x),(b.velocity.y))
   b.lastPos.x = b.pos.x
   b.lastPos.y = b.pos.y
 
-  b.pos.x -= acc.x
-  b.pos.y -= acc.y
-  b.velocity.x -= acc.x
-  b.velocity.y -= acc.y
+  b.pos.x -= acc.x*dt*VEL_MULTIPLIER
+  b.pos.y -= acc.y*dt*VEL_MULTIPLIER
+  b.velocity.x -= acc.x/100
+  b.velocity.y -= acc.y/100
 
   if(abs(b.lastPos.x - b.pos.x) < 0.01 and abs(b.lastPos.y - b.pos.y) < 0.01 and abs((b.pos.y + b.size.y.float) - window.size.y.float) <= 2):
     b.grounded = true
@@ -132,7 +133,7 @@ while window.open:
   for box in boxes.items:
     # Gravity
     if(not (box.dragged or box.grounded)):
-      box.velocity.y += -2
+      box.velocity.y += GRAVITY_FORCE
 
     # Screen borders
     if((box.pos.x+box.size.x.float) >  window.size.x.float):
@@ -171,18 +172,26 @@ while window.open:
         # Apply collisions tolerence
         if(deltaX < deltaY):
           if(box.pos.x > box2.pos.x):
-            box.pos.x += COLLISION_TOLERANCE
-            box2.pos.x -= COLLISION_TOLERANCE
+            if(abs(box.velocity.x) > abs(box2.velocity.x)):
+              box.pos.x = box2.pos.x + box.size.x.float
+            else:
+              box2.pos.x = box.pos.x - box2.size.x.float
           else:
-            box.pos.x -= COLLISION_TOLERANCE
-            box2.pos.x += COLLISION_TOLERANCE
+            if(abs(box.velocity.x) > abs(box2.velocity.x)):
+              box.pos.x = box2.pos.x - box.size.x.float
+            else:
+              box2.pos.x = box.pos.x + box2.size.x.float
         else:
           if(box.pos.y > box2.pos.y):
-            box.pos.y += COLLISION_TOLERANCE
-            box2.pos.y -= COLLISION_TOLERANCE
+            if(abs(box.velocity.y) > abs(box2.velocity.y)):
+              box.pos.y = box2.pos.y + box.size.y.float
+            else:
+              box2.pos.y = box.pos.y - box2.size.y.float
           else:
-            box.pos.y -= COLLISION_TOLERANCE
-            box2.pos.y += COLLISION_TOLERANCE
+            if(abs(box.velocity.y) > abs(box2.velocity.y)):
+              box.pos.y = box2.pos.y - box.size.y.float
+            else:
+              box2.pos.y = box.pos.y + box2.size.y.float
 
         # Calculate collision forces
         let pomVel1 = box.velocity.x
