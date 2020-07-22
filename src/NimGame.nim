@@ -1,4 +1,4 @@
-import csfml
+import csfml, csfml/audio
 import gameObjects
 
 # Render init
@@ -19,9 +19,20 @@ var
   clock = newClock()
   lastMousePos = vec2(0.0,0.0)
   wallTexture = new_Texture("resources/wall.jpg")
+  goalTexture = new_Texture("resources/goal.png")
   difficulty = 1
   difficultyOffset = 1
   towerHeight = 0
+  score = 0
+  font = newFont("resources/consolab.ttf")
+  doneSoundBfr = newSoundBuffer("resources/done.wav")
+  collisionSoundBfr = newSoundBuffer("resources/box_collision.wav")
+  destructSoundBfr = newSoundBuffer("resources/box_destruct.wav")
+  throwSoundBfr = newSoundBuffer("resources/throw.wav")
+  doneSound = newSound(doneSoundBfr)
+  collisionSound = newSound(collisionSoundBfr)
+  destructSound  = newSound(destructSoundBfr)
+  throwSound  = newSound(throwSoundBfr)
 
 # Constants
 const
@@ -29,9 +40,10 @@ const
   GRAVITY_FORCE = -5
 
 # Objects
-var boxes: seq[Box] = @[]
-var sepa = newSeparator(1, window.size)
-var baseBox: Box
+var 
+  boxes: seq[Box] = @[]
+  sepa = newSeparator(1, window.size)
+  baseBox: Box
 
 # Start game logic
 restartGame()
@@ -61,12 +73,40 @@ while window.open:
   window.draw wall
   wall.destroy()
 
+  # Paint goal indicator
+  let goal = new_Sprite(goalTexture)
+  goal.position = vec2(0,sepa.pos.y-48)
+  window.draw goal
+  goal.destroy()
+
   # Create separator
   sepa.paint(window)
 
   # Paint boxes
   for box in boxes.items:
     box.paint(window, deltaTime)
+
+  # Difficulty indicator + score
+  let msgBg = newRectangleShape(size = vec2(window.size.x,60))
+  msgBg.fillColor = color(150,150,150)
+  msgBg.position = vec2(0, window.size.y-60)
+  window.draw msgBg
+  msgBg.destroy()
+
+  let msg = newText("Level: " & $difficulty & "  Score: " & $score, font, 50)
+  msg.position = vec2(50, window.size.y-60)
+  msg.color = Black
+  window.draw msg
+  msg.destroy()
+
+  for box in boxes.items:
+    if(box.isThrown and not box.isTower):
+      if(box.pos.y < 0):
+        let height = newText($(abs(box.pos.y).int) & "px", font, 50)
+        height.position = vec2(box.pos.x + box.size.y/2, 0)
+        height.color = White
+        window.draw height
+        height.destroy()
 
   window.display()
 window.destroy()
@@ -124,13 +164,15 @@ proc calculatePhysics() =
           toDelete.add(boxi)
       box.pos.x =  (window.size.x-box.size.x).float
       box.velocity.x = -(box.velocity.x*box.bounce)
-    if((box.pos.y+box.size.y.float) >  window.size.y.float):
+    if((box.pos.y+box.size.y.float) > window.size.y.float-60):
+      if(not box.isTower and abs(box.velocity.y) > 30):
+        collisionSound.play()
       if(box.isThrown):
         if(box.isTower and not box.isBase):
           restartGame = true
         else:
           toDelete.add(boxi)
-      box.pos.y =  (window.size.y-box.size.y).float
+      box.pos.y =  (window.size.y-60-box.size.y).float
       box.velocity.y = -(box.velocity.y*box.bounce)
       box.velocity.x = box.velocity.x*box.bounce
     if(box.pos.x < 0):
@@ -154,7 +196,7 @@ proc calculatePhysics() =
       if(box == box2): continue
       if(box.pos.x < box2.pos.x + box2.size.x.float and box.pos.x > box2.pos.x - box2.size.x.float and
          box.pos.y < box2.pos.y + box2.size.y.float and box.pos.y > box2.pos.y - box2.size.y.float):
-        
+
         # Measure from which side collision happend
         var deltaY = 0.0
         if(abs(box.pos.y-box2.pos.y) > box.size.y.float-abs(box.pos.y-box2.pos.y)):
@@ -205,27 +247,34 @@ proc calculatePhysics() =
 
         # Flag tower if static and on top
         if(not (box.isTower and box2.isTower)):
+          collisionSound.play()
           if(box.isTopTower and abs(box2.velocity.x) + abs(box2.velocity.y) < 5):
             box2.isTower = true
             box2.isTopTower = true
             box.isTopTower = false
             spawnNewBox = true
+
             # Check if end game -> increase difficulty
             towerHeight += box2.size.y
             if(towerHeight > sepa.size.y):
+              score += difficulty
               inc(difficulty)
               restartGame = true
+              doneSound.play()
 
           elif(box2.isTopTower and abs(box.velocity.x) + abs(box.velocity.y) < 5):
             box.isTower = true
             box.isTopTower = true
             box2.isTopTower = false
             spawnNewBox = true
+
             # Check if end game -> increase difficulty
             towerHeight += box.size.y
             if(towerHeight > sepa.size.y):
+              score += difficulty
               inc(difficulty)
               restartGame = true
+              doneSound.play()
 
           # If box landed not on top, restart game
           if(not(box.isTopTower or box2.isTopTower)):
@@ -234,6 +283,7 @@ proc calculatePhysics() =
   # Delete tagged boxes
   for boxi in toDelete:
     boxes.delete(boxi)
+    destructSound.play()
     respawnBox()
 
   # Spawn new box
@@ -273,6 +323,7 @@ proc handleEvents(event: Event, deltaTime: float) =
         box.velocity.y = (distance.y / deltaTime) * THROW_MULTIPLIER
 
         box.isThrown = true
+        throwSound.play()
 
   # MouseMove -> Recalculate dragging coords
   elif event.kind == EventType.MouseMoved:
